@@ -92,6 +92,8 @@ public class MainActivity extends AppCompatActivity {
         PrepareScanSetting();
         PreparePeripherals();
         startServer();
+        System.out.println(mBluetoothAdapter.getName());
+        System.out.println(mBluetoothAdapter.getAddress());
     }
 
     public void startServer(){
