@@ -1,5 +1,6 @@
 package test.research.sjsu.heraprototypev_10;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -10,7 +11,7 @@ import java.util.concurrent.TimeUnit;
  * Created by Steven on 10/13/2017.
  */
 
-public class HERA {
+public class HERA implements Serializable{
     private int H = 5;
     private double[] beta = {1, 0.5, 0.05, 0.005, 0.0005},
                     gamma = {1, 0.5, 0.05, 0.005, 0.0005};
@@ -19,6 +20,10 @@ public class HERA {
     private int timeUnitIndex = 1;
     private Map<String, List<Double>> reachabilityMatrix = new HashMap<>();
     private String self;
+    public HERA() {
+        reachabilityMatrix.put("abc", new ArrayList<Double>(3){});
+        reachabilityMatrix.get("abc").add(1.0);
+    }
     public HERA(int maxHop, double agingConstant, double[] intrinsicConfidence, double[] weight, int timeUnit, String selfAddress) {
         H = maxHop;
         alpha = agingConstant;
@@ -26,6 +31,9 @@ public class HERA {
         gamma = weight;
         timeUnitIndex = timeUnit;
         self = selfAddress;
+    }
+    public Map<String, List<Double>> getReachabilityMatrix() {
+        return reachabilityMatrix;
     }
     public double getReachability( String destination) {
         ageMatrix();
