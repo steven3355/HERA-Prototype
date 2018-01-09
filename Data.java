@@ -1,9 +1,11 @@
 package test.research.sjsu.heraprototypev_10;
 
+import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.ObjectInputStream;
 import java.io.ObjectOutputStream;
-import java.util.Arrays;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -24,16 +26,20 @@ public class Data{
         switch(id){
             case "3000":
                 if (ID < segmentCounts) {
-                    byte[] toSend = new byte[Datasize + 2];
-                    toSend[0] = (byte) ID;
-                    toSend[1] = (byte) (ID == segmentCounts - 1 ? 0 : 1);
-                    for (int i = 0; i < Datasize; i++) {
-                        if (ID*Datasize + i >= data.length)
+                    List<Byte> temp = new ArrayList<>();
+                    temp.add((byte) ID);
+                    temp.add((byte) (ID == segmentCounts - 1 ? 0 : 1));
+                    for (int i = 0; i < 300; i++) {
+                        if (ID*300 + i >= data.length)
                             break;
-                        toSend[i + 2] = data[ID*Datasize + i];
+                        temp.add(data[ID*300 + i]);
+                    }
+                    byte[] toSend = new byte[temp.size()];
+                    for (int i = 0; i < temp.size(); i++) {
+                        toSend[i] = temp.get(i);
                     }
                     System.out.println("Data prepared, sequence: " + ID + " Length: " + toSend.length);
-                    System.out.println("The toSend Array is " + new String(Arrays.copyOfRange(toSend, 2, toSend.length - 1)));
+                    System.out.println("The toSend Array is " + bytesToHex(toSend));
                     return toSend;
                 }
         }
@@ -48,7 +54,18 @@ public class Data{
         data = bos.toByteArray();
         System.out.println("Successfully converted Map to Byte Array, size : " + data.length);
         oos.close();
-        segmentCounts = data.length / Datasize + (data.length % Datasize == 0 ? 0 : 1);
+        segmentCounts = data.length / 300 + (data.length % 300 == 0 ? 0 : 1);
+
+        System.out.println("Converted Reachability Matrix: " + bytesToHex(data));
+        ObjectInputStream input = null;
+        try {
+            ByteArrayInputStream inputStream = new ByteArrayInputStream(data);
+            input = new ObjectInputStream(inputStream);
+            Map<String, List<Double>> neighborReachabilityMatrix = (Map<String, List<Double>>) input.readObject();
+            System.out.println("Test: " + neighborReachabilityMatrix.toString());
+        } catch (Exception e) {
+            System.out.println("Reconstruct map exception" + e.fillInStackTrace());
+        }
     }
 
     public static String bytesToHex(byte[] bytes) {

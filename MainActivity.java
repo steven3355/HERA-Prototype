@@ -21,6 +21,8 @@ import android.bluetooth.le.ScanSettings;
 import android.content.Context;
 import android.os.AsyncTask;
 import android.os.Bundle;
+import android.os.Handler;
+import android.os.Looper;
 import android.os.ParcelUuid;
 import android.support.v7.app.AppCompatActivity;
 import android.text.method.ScrollingMovementMethod;
@@ -44,6 +46,7 @@ public class MainActivity extends AppCompatActivity {
     //HERA
     HERA myHERA;
     ByteArrayOutputStream concatenateByteArrays;
+    ByteArrayOutputStream temp;
 
     //API
     BluetoothManager mBluetoothManager;
@@ -110,7 +113,7 @@ public class MainActivity extends AppCompatActivity {
     public void startServer(){
         mBluetoothGattServer = mBluetoothManager.openGattServer(this, mBluetoothGattServerCallback);
         mBluetoothGattService = new BluetoothGattService(mServiceUUID2, 0);
-        mBluetoothGattCharacteristic = new BluetoothGattCharacteristic(mCharUUID,BluetoothGattCharacteristic.PROPERTY_READ,BluetoothGattCharacteristic.PERMISSION_READ);
+        mBluetoothGattCharacteristic = new BluetoothGattCharacteristic(mCharUUID,BluetoothGattCharacteristic.PROPERTY_WRITE,BluetoothGattCharacteristic.PERMISSION_WRITE);
         mBluetoothGattCharacteristic2 = new BluetoothGattCharacteristic(mCharUUID2,BluetoothGattCharacteristic.PROPERTY_READ,BluetoothGattCharacteristic.PERMISSION_READ);
         mBluetoothGattService.addCharacteristic(mBluetoothGattCharacteristic);
         mBluetoothGattService.addCharacteristic(mBluetoothGattCharacteristic2);
@@ -132,6 +135,45 @@ public class MainActivity extends AppCompatActivity {
             if ((Data.getData(characteristic.getUuid(),count).length) != 0)
                 mBluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, 0 , Data.getData(characteristic.getUuid(),count));
             count++;
+        }
+
+        @Override
+        public void onConnectionStateChange(BluetoothDevice device, int status, int newState) {
+            super.onConnectionStateChange(device, status, newState);
+            if (status == BluetoothGatt.GATT_SUCCESS) {
+                concatenateByteArrays = new ByteArrayOutputStream();
+                temp = new ByteArrayOutputStream();
+            }
+        }
+
+        @Override
+        public void onCharacteristicWriteRequest(BluetoothDevice device, int requestId, BluetoothGattCharacteristic characteristic, boolean preparedWrite, boolean responseNeeded, int offset, byte[] value) {
+            super.onCharacteristicWriteRequest(device, requestId, characteristic, preparedWrite, responseNeeded, offset, value);
+            System.out.println("Character write request received: " + Data.bytesToHex(value));
+            if (characteristic.getUuid().equals(mCharUUID)) {
+                try {
+                    concatenateByteArrays.write(Arrays.copyOfRange(value, 2, value.length));
+                } catch (Exception e) {
+                    System.out.println("ByteArrayOutputStream Exception: " + e.fillInStackTrace());
+                }
+                System.out.println("Current cache contains: " + Data.bytesToHex(concatenateByteArrays.toByteArray()));
+                if (value[1] == 0) {
+                    ObjectInputStream input = null;
+                    try {
+                        ByteArrayInputStream inputStream = new ByteArrayInputStream(concatenateByteArrays.toByteArray());
+                        input = new ObjectInputStream(inputStream);
+                        Map<String, List<Double>> neighborReachabilityMatrix = (Map<String, List<Double>>) input.readObject();
+                        System.out.println(neighborReachabilityMatrix.toString());
+                    } catch (Exception e) {
+                        System.out.println("Reconstruct map exception" + e.fillInStackTrace());
+                    }
+                }
+                mBluetoothGattServer.sendResponse(device, requestId, BluetoothGatt.GATT_SUCCESS, offset, value);
+            }
+        }
+        @Override
+        public void onExecuteWrite(BluetoothDevice device, int requestId, boolean execute) {
+            super.onExecuteWrite(device, requestId, execute);
         }
     };
 
@@ -338,9 +380,51 @@ public class MainActivity extends AppCompatActivity {
                         ConnectionState.setText("MTU changed and reading characteristic" + "\nCurrent GATT connection : " + mBluetoothManager.getConnectedDevices(7).size());
                     }
                 });
-                mBluetoothGatt.readCharacteristic(mBluetoothGatt.getService(mServiceUUID2).getCharacteristic(mCharUUID));
+//                mBluetoothGatt.readCharacteristic(mBluetoothGatt.getService(mServiceUUID2).getCharacteristic(mCharUUID));
                 System.out.println("MTU is changed to " + mtu);
+                System.out.println("The Reachability Matrix consists of: " + myHERA.getReachabilityMatrix().toString());
+                try {
+                    Data.setReachabilityMatrixData(myHERA.getReachabilityMatrix(), mtu);
+                } catch (IOException e) {
+                    System.out.println(e.fillInStackTrace());
+                }
+                System.out.println("Data.getData returned an array of length: " + Data.getData(mCharUUID,0).length);
+//                gatt.beginReliableWrite();
+                BluetoothGattCharacteristic toSendValue = mBluetoothGatt.getService(mServiceUUID2).getCharacteristic(mCharUUID);
+                toSendValue.setValue(Data.getData(mCharUUID, 0));
+//                toSendValue.setValue("\0\1This is a test".getBytes());
+                System.out.println("Characteristic prepared: " + Data.bytesToHex(Data.getData(mCharUUID, 0)));
+//                gatt.writeCharacteristic(toSendValue);
+//                gatt.executeReliableWrite();
+//                System.out.println("Initial segment sent");
+                gatt.writeCharacteristic(toSendValue);
             }
+        }
+
+        @Override
+        public void onCharacteristicWrite(BluetoothGatt gatt, BluetoothGattCharacteristic characteristic, int status) {
+            super.onCharacteristicWrite(gatt, characteristic, status);
+            try {
+                Thread.sleep(1000);
+            } catch (InterruptedException e) {
+                e.printStackTrace();
+            }
+            int prevSegCount = characteristic.getValue()[0];
+            System.out.println("prevSegCount = " + prevSegCount);
+            int isLast = characteristic.getValue()[1];
+            System.out.println("isLast = " + isLast);
+            BluetoothGattCharacteristic segmentToSend = mBluetoothGatt.getService(mServiceUUID2).getCharacteristic(mCharUUID);
+            if(isLast != 0) {
+                segmentToSend.setValue(Data.getData(mCharUUID, prevSegCount + 1));
+//                segmentToSend.setValue("\1\0why this no work".getBytes());
+                System.out.println(Data.bytesToHex(segmentToSend.getValue()));
+
+                gatt.writeCharacteristic(segmentToSend);
+            }
+            else {
+                System.out.println("All segments have been transmitted");
+            }
+
         }
     };
 
@@ -354,6 +438,7 @@ public class MainActivity extends AppCompatActivity {
         mBluetoothLeAdvertiser.stopAdvertising(mAdvertiseCallback);
         BroadcastButton.setVisibility(View.VISIBLE);
         StopBroadcastButton.setVisibility(View.INVISIBLE);
+        mBluetoothGatt.close();
     }
 
     private AdvertiseCallback mAdvertiseCallback = new AdvertiseCallback() {
@@ -385,6 +470,7 @@ public class MainActivity extends AppCompatActivity {
                 mBluetoothLeScanner.stopScan(leScanCallback);
             }
         });
+
     }
 
     private ScanCallback leScanCallback = new ScanCallback() {
@@ -405,9 +491,17 @@ public class MainActivity extends AppCompatActivity {
                             "\nTime Elapsed  = "+ (result.getTimestampNanos()-time)/1000000000 +
                             "\nService Data = " + data);
             address = result.getDevice().getAddress();
-            BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
-            if ((!connectionStatus.containsKey(device) || connectionStatus.get(device) == 0) && !connecting)
-                EstablishConnection(device);
+            Handler mainHandler = new Handler(Looper.getMainLooper());
+
+            Runnable myRunnable = new Runnable() {
+                @Override
+                public void run() {
+                    BluetoothDevice device = mBluetoothAdapter.getRemoteDevice(address);
+                    if ((!connectionStatus.containsKey(device) || connectionStatus.get(device) == 0) && !connecting)
+                        EstablishConnection(device);
+                }
+            };
+            mainHandler.post(myRunnable);
         }
     };
     private void EstablishConnection(BluetoothDevice device){
